@@ -60,7 +60,7 @@ class ConfluenceTag(object):
         self.children.append(child)
 
 
-class ConfluenceRenderer(mistune.Renderer):
+class ConfluenceRenderer(mistune.HTMLRenderer):
     def __init__(
         self,
         strip_header=False,
@@ -81,14 +81,13 @@ class ConfluenceRenderer(mistune.Renderer):
         self.relative_links = list()
         self.title = None
 
-    def header(self, text, level, raw=None):
+    def heading(self, text, level, **attrs):
         if self.title is None and level == 1:
             self.title = text
-            # Don't duplicate page title as a header
             if self.strip_header:
                 return ""
 
-        return super(ConfluenceRenderer, self).header(text, level, raw=raw)
+        return super().heading(text, level, **attrs)
 
     def structured_macro(self, name):
         return ConfluenceTag("structured-macro", attrib={"name": name})
@@ -103,28 +102,25 @@ class ConfluenceRenderer(mistune.Renderer):
         body_tag.text = text
         return body_tag
 
-    def link(self, link, title, text):
-        parsed_link = urlparse(link)
+    def link(self, text, url, title=None):
+        parsed_link = urlparse(url)
         if (
             self.enable_relative_links
             and (not parsed_link.scheme and not parsed_link.netloc)
             and parsed_link.path
         ):
-            # relative link
             replacement_link = f"md2cf-internal-link-{uuid.uuid4()}"
             self.relative_links.append(
                 RelativeLink(
-                    # make sure to unquote the url as relative paths
-                    # might have escape sequences
                     path=unquote(parsed_link.path),
                     replacement=replacement_link,
                     fragment=parsed_link.fragment,
-                    original=link,
-                    escaped_original=mistune.escape_link(link),
+                    original=url,
+                    escaped_original=mistune.escape_url(url),
                 )
             )
-            link = replacement_link
-        return super(ConfluenceRenderer, self).link(link, title, text)
+            url = replacement_link
+        return super().link(text, url, title)
 
     def text(self, text):
         if self.remove_text_newlines:
@@ -132,31 +128,33 @@ class ConfluenceRenderer(mistune.Renderer):
 
         return super().text(text)
 
-    def block_code(self, code, lang=None):
+    def block_code(self, code, info=None, **attrs):
+        lang = None
+        if info is not None:
+            lang = info.strip().split(None, 1)[0]
         root_element = self.structured_macro("code")
-        if lang is not None:
+        if lang:
             lang_parameter = self.parameter(name="language", value=lang)
             root_element.append(lang_parameter)
         root_element.append(self.parameter(name="linenumbers", value="true"))
         root_element.append(self.plain_text_body(code))
         return root_element.render()
 
-    def image(self, src, title, text):
+    def image(self, text, url, title=None):
         attributes = {"alt": text}
         if title:
             attributes["title"] = title
 
         root_element = ConfluenceTag(name="image", attrib=attributes)
-        parsed_source = urlparse(src)
+        parsed_source = urlparse(url)
         if not parsed_source.netloc:
-            # Local file, requires upload
-            basename = Path(src).name
+            basename = Path(url).name
             url_tag = ConfluenceTag(
                 "attachment", attrib={"filename": basename}, namespace="ri"
             )
-            self.attachments.append(src)
+            self.attachments.append(url)
         else:
-            url_tag = ConfluenceTag("url", attrib={"value": src}, namespace="ri")
+            url_tag = ConfluenceTag("url", attrib={"value": url}, namespace="ri")
         root_element.append(url_tag)
 
         return root_element.render()
