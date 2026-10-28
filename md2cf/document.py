@@ -5,9 +5,12 @@ from typing import Any, Dict, List, Optional
 
 import chardet
 import mistune
+from mistune.plugins.formatting import strikethrough
+from mistune.plugins.table import table
 import yaml
 from yaml.parser import ParserError
 
+from md2cf.admonition import admonition
 from md2cf.confluence_renderer import ConfluenceRenderer, RelativeLink
 from md2cf.ignored_files import GitRepository
 
@@ -249,11 +252,23 @@ def get_page_data_from_lines(
     if "frontmatter_end_line" in frontmatter:
         markdown_lines = markdown_lines[frontmatter["frontmatter_end_line"] :]
 
+    frontmatter_attachments = None
+    if "attachments" in frontmatter:
+        frontmatter_attachments = frontmatter["attachments"]
+
+        if not isinstance(frontmatter_attachments, list):
+            raise TypeError(
+                "the attachments section in the frontmatter must be a list"
+            )
+
+        frontmatter_attachments = [str(item) for item in frontmatter_attachments]
+
     page = parse_page(
         markdown_lines,
         strip_header=strip_header,
         remove_text_newlines=remove_text_newlines,
         enable_relative_links=enable_relative_links,
+        frontmatter_attachments=frontmatter_attachments,
     )
 
     if "title" in frontmatter:
@@ -266,6 +281,12 @@ def get_page_data_from_lines(
             raise TypeError(
                 "the labels section in the frontmatter " "must be a list of strings"
             )
+    if frontmatter_attachments:
+        if not isinstance(page.attachments, list):
+            page.attachments = []
+
+        page.attachments.extend(frontmatter_attachments)
+
     return page
 
 
@@ -274,14 +295,18 @@ def parse_page(
     strip_header: bool = False,
     remove_text_newlines: bool = False,
     enable_relative_links: bool = False,
+    frontmatter_attachments: Optional[List[str]] = None,
 ) -> Page:
     renderer = ConfluenceRenderer(
         use_xhtml=True,
         strip_header=strip_header,
         remove_text_newlines=remove_text_newlines,
         enable_relative_links=enable_relative_links,
+        frontmatter_attachments=frontmatter_attachments,
     )
-    confluence_mistune = mistune.Markdown(renderer=renderer)
+    confluence_mistune = mistune.Markdown(
+        renderer=renderer, plugins=[table, strikethrough, admonition]
+    )
     confluence_content = confluence_mistune("".join(markdown_lines))
 
     page = Page(

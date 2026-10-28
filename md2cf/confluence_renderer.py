@@ -4,6 +4,9 @@ from typing import List, NamedTuple
 from urllib.parse import unquote, urlparse
 
 import mistune
+from mistune.util import escape as escape_text
+
+from md2cf.admonition import panel_macro
 
 
 class RelativeLink(NamedTuple):
@@ -66,9 +69,13 @@ class ConfluenceRenderer(mistune.Renderer):
         strip_header=False,
         remove_text_newlines=False,
         enable_relative_links=False,
+        frontmatter_attachments=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.frontmatter_attachment_names = {
+            Path(attachment).name for attachment in frontmatter_attachments or []
+        }
         self.strip_header = strip_header
         self.remove_text_newlines = remove_text_newlines
         self.attachments = list()
@@ -103,8 +110,35 @@ class ConfluenceRenderer(mistune.Renderer):
         body_tag.text = text
         return body_tag
 
-    def link(self, link, title, text):
-        parsed_link = urlparse(link)
+    def admonition(self, text, kind="note", title=""):
+        root_element = self.structured_macro(panel_macro(kind))
+        if title:
+            root_element.append(self.parameter(name="title", value=escape_text(title)))
+        body = ConfluenceTag("rich-text-body")
+        body.text = text
+        root_element.append(body)
+        return root_element.render()
+
+    def block_html(self, html):
+        # HTML comments are for authors; Confluence should not show them.
+        if html.strip().startswith("<!--"):
+            return ""
+        return super().block_html(html)
+
+    def inline_html(self, html):
+        if html.startswith("<!--"):
+            return ""
+        return super().inline_html(html)
+
+    def table_cell(self, text, align=None, head=False):
+        # In a table, "\|" stands for a literal pipe, including inside code spans.
+        text = text.replace("\\|", "|")
+        tag = "th" if head else "td"
+        style = f' style="text-align:{align}"' if align else ""
+        return f"  <{tag}{style}>{text}</{tag}>\n"
+
+    def link(self, text, url, title=None):
+        parsed_link = urlparse(url)
         if (
             self.enable_relative_links
             and (not parsed_link.scheme and not parsed_link.netloc)
@@ -141,13 +175,39 @@ class ConfluenceRenderer(mistune.Renderer):
         root_element.append(self.plain_text_body(code))
         return root_element.render()
 
+<<<<<<< HEAD
     def image(self, src, title, text):
+=======
+    def drawio_diagram_name(self, url):
+        name = Path(url).name
+        if not name.lower().endswith(".drawio.png"):
+            return None
+        drawio_name = name[: -len(".png")]
+        if drawio_name in self.frontmatter_attachment_names:
+            return drawio_name
+        return None
+
+    def image(self, text, url, title=None):
+        parsed_source = urlparse(url)
+        if not parsed_source.netloc:
+            diagram_name = self.drawio_diagram_name(url)
+            if diagram_name:
+                self.attachments.append(url)
+                macro = self.structured_macro("drawio")
+                macro.append(self.parameter(name="diagramName", value=diagram_name))
+                macro.append(self.parameter(name="diagramDisplayName", value=diagram_name))
+                return macro.render()
+
+>>>>>>> 68e6979 (Handle admonition, drawio and replace homepage)
         attributes = {"alt": text}
         if title:
             attributes["title"] = title
 
         root_element = ConfluenceTag(name="image", attrib=attributes)
+<<<<<<< HEAD
         parsed_source = urlparse(src)
+=======
+>>>>>>> 68e6979 (Handle admonition, drawio and replace homepage)
         if not parsed_source.netloc:
             # Local file, requires upload
             basename = Path(src).name

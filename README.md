@@ -145,6 +145,12 @@ To upload the page under **a specific parent**, you can provide the parent's pag
 
 To move a page to a **top-level page** (i.e. directly under the space's Home Page), use the `--top-level` flag.
 
+To **replace the space's Home Page** with a markdown file, use `--replace-homepage path/to/index.md`. The Home Page is updated in place and keeps its existing title. If the file is not already among the files or directories being uploaded, it is added to the run so that relative links to and from it are resolved. It can be combined with `--top-level`, and cannot be combined with `--page-id`.
+
+```shell
+md2cf --top-level --enable-relative-links --replace-homepage docs/index.md docs/*/
+```
+
 ### Update message
 
 Optionally, you can provide an **update message** using the `--message` parameter to describe the change you made. If you're using the `--only-changed` option at the same time, the version update message will also include a hash of the page or attachment contents at the end.

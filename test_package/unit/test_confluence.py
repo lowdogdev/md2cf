@@ -386,3 +386,52 @@ def test_update_attachment(mocker, confluence, requests_mock):
     response = confluence.update_attachment(test_page, test_fp, test_attachment)
 
     assert response == test_response
+
+
+def test_attachment_comment_is_a_form_field_not_a_file(mocker, confluence, requests_mock):
+    """Confluence Cloud rejects a `comment` sent as a file part with a 500 error."""
+    test_page = bunchify({"id": 1234})
+    test_fp = io.BytesIO(b"image data")
+    test_fp.name = "image.png"
+    requests_mock.post(
+        TEST_HOST + f"content/{test_page.id}/child/attachment?allowDuplicated=true",
+        json={},
+    )
+
+    confluence.create_attachment(test_page, test_fp, message="[vabc123]")
+
+    body = requests_mock.last_request.body.decode()
+    assert 'name="comment"\r\n\r\n[vabc123]' in body
+    assert 'name="comment"; filename=' not in body
+    assert 'name="file"; filename="image.png"' in body
+
+
+def test_update_attachment_comment_is_a_form_field_not_a_file(mocker, confluence, requests_mock):
+    test_page = bunchify({"id": 1234})
+    test_attachment = bunchify({"id": 3241})
+    test_fp = io.BytesIO(b"image data")
+    test_fp.name = "image.png"
+    requests_mock.post(
+        TEST_HOST + f"content/{test_page.id}/child/attachment/{test_attachment.id}/data",
+        json={},
+    )
+
+    confluence.update_attachment(test_page, test_fp, test_attachment, message="[vabc123]")
+
+    body = requests_mock.last_request.body.decode()
+    assert 'name="comment"\r\n\r\n[vabc123]' in body
+    assert 'name="comment"; filename=' not in body
+
+
+def test_attachment_without_comment_sends_only_the_file(mocker, confluence, requests_mock):
+    test_page = bunchify({"id": 1234})
+    test_fp = io.BytesIO(b"image data")
+    test_fp.name = "image.png"
+    requests_mock.post(
+        TEST_HOST + f"content/{test_page.id}/child/attachment?allowDuplicated=true",
+        json={},
+    )
+
+    confluence.create_attachment(test_page, test_fp)
+
+    assert 'name="comment"' not in requests_mock.last_request.body.decode()

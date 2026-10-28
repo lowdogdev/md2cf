@@ -124,10 +124,12 @@ def labels_need_updating(page, existing_page):
     if page.labels is None:
         return False
 
-    if sorted(
+    if getattr(existing_page, "metadata", None) is not None and (sorted(
         [label.name for label in existing_page.metadata.labels.results]
-    ) != sorted(page.labels):
+    ) != sorted(page.labels)):
         return True
+
+    return getattr(existing_page, "metadata", None)
 
 
 def page_needs_updating(page, existing_page, replace_all_labels):

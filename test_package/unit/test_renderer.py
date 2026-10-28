@@ -260,6 +260,81 @@ def test_renderer_image_internal_relative():
     assert renderer.attachments == [test_image_src]
 
 
+DRAWIO_MACRO_MARKUP = (
+    '<ac:structured-macro ac:name="drawio">'
+    '<ac:parameter ac:name="diagramName">diagram.drawio</ac:parameter>\n'
+    '<ac:parameter ac:name="diagramDisplayName">diagram.drawio</ac:parameter>\n'
+    "</ac:structured-macro>\n"
+)
+
+
+def test_renderer_png_with_drawio_in_frontmatter_becomes_drawio_macro():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    assert renderer.image("alt", "diagram.drawio.png") == DRAWIO_MACRO_MARKUP
+
+
+def test_renderer_drawio_png_is_still_attached():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    renderer.image("", "images/diagram.drawio.png")
+
+    assert renderer.attachments == ["images/diagram.drawio.png"]
+
+
+def test_renderer_drawio_matches_on_basename_only():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["other/dir/diagram.drawio"])
+
+    assert renderer.image("", "images/diagram.drawio.png") == DRAWIO_MACRO_MARKUP
+
+
+def test_renderer_png_suffix_match_is_case_insensitive():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    assert renderer.image("", "diagram.drawio.PNG") == DRAWIO_MACRO_MARKUP
+
+
+def test_renderer_png_without_drawio_in_filename_stays_an_image():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    assert renderer.image("", "diagram.png").startswith("<ac:image")
+
+
+def test_renderer_png_without_matching_drawio_stays_an_image():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["other.drawio"])
+
+    assert renderer.image("", "diagram.drawio.png").startswith("<ac:image")
+
+
+def test_renderer_png_without_frontmatter_attachments_stays_an_image():
+    renderer = ConfluenceRenderer()
+
+    assert renderer.image("", "diagram.drawio.png").startswith("<ac:image")
+
+
+def test_renderer_non_png_image_with_drawio_stays_an_image():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    assert renderer.image("", "diagram.drawio.jpg").startswith("<ac:image")
+
+
+def test_renderer_external_png_with_drawio_stays_an_image():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    result = renderer.image("", "http://example.com/diagram.drawio.png")
+
+    assert result.startswith("<ac:image")
+    assert not renderer.attachments
+
+
+def test_renderer_reinit_keeps_frontmatter_attachments():
+    renderer = ConfluenceRenderer(frontmatter_attachments=["diagram.drawio"])
+
+    renderer.reinit()
+
+    assert renderer.image("", "diagram.drawio.png") == DRAWIO_MACRO_MARKUP
+
+
 def test_renderer_remove_text_newlines():
     test_text = "This is a paragraph\nwith some newlines\nin it."
     test_stripped_text = "This is a paragraph with some newlines in it."
