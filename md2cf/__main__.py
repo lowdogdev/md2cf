@@ -99,6 +99,16 @@ def get_parser():
     )
 
     page_group.add_argument(
+        "--replace-homepage",
+        type=Path,
+        metavar="MARKDOWN_FILE",
+        help="path to a markdown file whose contents replace the space's homepage. "
+        "If the file is not already part of the files or directories being "
+        "uploaded it is added, so relative links to and from it are resolved. "
+        "The homepage keeps its existing title. Can be combined with --top-level",
+    )
+
+    page_group.add_argument(
         "-t",
         "--title",
         help="a title for the page. Determined from the document if missing",
@@ -308,6 +318,12 @@ def main():
         max_retries=args.max_retries,
     )
 
+    if args.replace_homepage and args.page_id:
+        error_console.log(
+            ":x: --replace-homepage and --page-id cannot be used together\n"
+        )
+        sys.exit(1)
+
     if (args.title or args.page_id) and (
         len(args.file_list) > 1 or any(map(os.path.isdir, args.file_list))
     ):
@@ -505,11 +521,31 @@ def main():
         sys.exit(1)
 
 
+def is_replacement_homepage(page, args):
+    return (
+        args.replace_homepage is not None
+        and page.file_path is not None
+        and page.file_path.resolve() == args.replace_homepage.resolve()
+    )
+
+
 def pre_process_page(page, args, postface_markup, preface_markup, space_info):
     page.original_title = page.title
     page.space = args.space
     page.page_id = args.page_id
     page.content_type = args.content_type
+
+    if is_replacement_homepage(page, args):
+        # The homepage is updated in place by ID: it has no parent and keeps
+        # its Confluence title (updates never rename a page).
+        page.page_id = space_info.homepage.id
+        page.parent_title = None
+        page.parent_id = None
+        if preface_markup:
+            page.body = preface_markup + page.body
+        if postface_markup:
+            page.body = page.body + postface_markup
+        return
 
     if page.parent_title is None:  # This only happens for top level pages
         # If the argument is not supplied this leaves
@@ -664,7 +700,17 @@ def update_pages_with_relative_links(
 
 def collect_pages_to_upload(args):
     pages_to_upload: List[Page] = list()
-    if not args.file_list:  # Uploading from standard input
+    file_list = args.file_list
+    if args.replace_homepage and not file_list:
+        file_list = [args.replace_homepage]
+
+    if args.replace_homepage and not args.replace_homepage.is_file():
+        error_console.log(
+            f":x: --replace-homepage file {args.replace_homepage} does not exist\n"
+        )
+        sys.exit(1)
+
+    if not file_list:  # Uploading from standard input
         pages_to_upload.append(
             md2cf.document.get_page_data_from_lines(
                 sys.stdin.readlines(),
@@ -684,7 +730,7 @@ def collect_pages_to_upload(args):
         if args.title:
             pages_to_upload[0].title = args.title
     else:
-        for file_name in args.file_list:
+        for file_name in file_list:
             if file_name.is_dir():
                 pages_to_upload += md2cf.document.get_pages_from_directory(
                     file_name,
@@ -697,11 +743,14 @@ def collect_pages_to_upload(args):
                     use_pages_file=args.use_pages_file,
                     use_gitignore=args.use_gitignore,
                     enable_relative_links=args.enable_relative_links,
+                    exclude_files=(
+                        [args.replace_homepage] if args.replace_homepage else None
+                    ),
                 )
             else:
                 try:
                     enable_relative_links = (
-                        len(args.file_list) > 1 and args.enable_relative_links
+                        len(file_list) > 1 and args.enable_relative_links
                     )
                     pages_to_upload.append(
                         md2cf.document.get_page_data_from_file_path(
@@ -713,6 +762,19 @@ def collect_pages_to_upload(args):
                     )
                 except FileNotFoundError:
                     error_console.log(f"File {file_name} does not exist\n")
+
+        if args.replace_homepage and not any(
+            is_replacement_homepage(page, args) for page in pages_to_upload
+        ):
+            pages_to_upload.insert(
+                0,
+                md2cf.document.get_page_data_from_file_path(
+                    args.replace_homepage,
+                    strip_header=args.strip_top_header,
+                    remove_text_newlines=args.remove_text_newlines,
+                    enable_relative_links=args.enable_relative_links,
+                ),
+            )
 
         if len(pages_to_upload) == 1:
             only_page = pages_to_upload[0]

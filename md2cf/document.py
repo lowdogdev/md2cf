@@ -5,9 +5,12 @@ from typing import Any, Dict, List, Optional
 
 import chardet
 import mistune
+from mistune.plugins.formatting import strikethrough
+from mistune.plugins.table import table
 import yaml
 from yaml.parser import ParserError
 
+from md2cf.admonition import admonition
 from md2cf.confluence_renderer import ConfluenceRenderer, RelativeLink
 from md2cf.ignored_files import GitRepository
 
@@ -91,6 +94,7 @@ def get_pages_from_directory(
     remove_text_newlines: bool = False,
     use_gitignore: bool = True,
     enable_relative_links: bool = False,
+    exclude_files: Optional[List[Path]] = None,
 ) -> List[Page]:
     """
     Collect a list of markdown files recursively under the file_path directory.
@@ -107,14 +111,18 @@ def get_pages_from_directory(
       search
     :param enable_relative_links: extract all relative links and replace them with
       placeholders
+    :param exclude_files: files to leave out of the directory structure, so they
+      take no part in folder titles or collapsing (e.g. the replacement homepage)
     :return: A list of paths to the markdown files to upload.
     """
     processed_pages = list()
+    excluded = {Path(f).resolve() for f in (exclude_files or [])}
     base_path = file_path.resolve()
     folder_data = dict()
     git_repo = GitRepository(file_path, use_gitignore=use_gitignore)
 
     for current_path, directories, file_names in os.walk(file_path):
+        directories.sort()
         current_path = Path(current_path).resolve()
 
         if git_repo.is_ignored(current_path):
@@ -127,7 +135,9 @@ def get_pages_from_directory(
         ]
         # Filter out ignored files
         markdown_files = [
-            path for path in markdown_files if not git_repo.is_ignored(path)
+            path
+            for path in markdown_files
+            if not git_repo.is_ignored(path) and path.resolve() not in excluded
         ]
 
         folder_data[current_path] = {"n_files": len(markdown_files)}
@@ -249,11 +259,23 @@ def get_page_data_from_lines(
     if "frontmatter_end_line" in frontmatter:
         markdown_lines = markdown_lines[frontmatter["frontmatter_end_line"] :]
 
+    frontmatter_attachments = None
+    if "attachments" in frontmatter:
+        frontmatter_attachments = frontmatter["attachments"]
+
+        if not isinstance(frontmatter_attachments, list):
+            raise TypeError(
+                "the attachments section in the frontmatter must be a list"
+            )
+
+        frontmatter_attachments = [str(item) for item in frontmatter_attachments]
+
     page = parse_page(
         markdown_lines,
         strip_header=strip_header,
         remove_text_newlines=remove_text_newlines,
         enable_relative_links=enable_relative_links,
+        frontmatter_attachments=frontmatter_attachments,
     )
 
     if "title" in frontmatter:
@@ -266,6 +288,12 @@ def get_page_data_from_lines(
             raise TypeError(
                 "the labels section in the frontmatter " "must be a list of strings"
             )
+    if frontmatter_attachments:
+        if not isinstance(page.attachments, list):
+            page.attachments = []
+
+        page.attachments.extend(frontmatter_attachments)
+
     return page
 
 
@@ -274,13 +302,17 @@ def parse_page(
     strip_header: bool = False,
     remove_text_newlines: bool = False,
     enable_relative_links: bool = False,
+    frontmatter_attachments: Optional[List[str]] = None,
 ) -> Page:
     renderer = ConfluenceRenderer(
         strip_header=strip_header,
         remove_text_newlines=remove_text_newlines,
         enable_relative_links=enable_relative_links,
+        frontmatter_attachments=frontmatter_attachments,
     )
-    confluence_mistune = mistune.Markdown(renderer=renderer)
+    confluence_mistune = mistune.Markdown(
+        renderer=renderer, plugins=[table, strikethrough, admonition]
+    )
     confluence_content = confluence_mistune("".join(markdown_lines))
 
     page = Page(

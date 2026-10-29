@@ -117,7 +117,7 @@ def test_upsert_page_parent_not_found(mocker):
             message=message,
         )
 
-    assert "The parent page could not be found" in str(parent_exception)
+    assert "The parent page 'sentinel.parent' could not be found for 'sentinel.title'" in str(parent_exception)
 
     confluence.create_page.assert_not_called()
 
@@ -467,3 +467,17 @@ def test_page_needs_updating_content_replace_all_labels_and_empty_labels_supplie
     assert not md2cf.upsert.page_needs_updating(
         page, existing_page_mock, replace_all_labels=True
     )
+
+
+def test_labels_need_updating_when_existing_page_has_no_metadata(mocker):
+    """The page returned by update_page may not carry label metadata, in which
+    case we can't tell what labels it has and must add them"""
+    page = Page(
+        space=mocker.sentinel.space,
+        title=mocker.sentinel.title,
+        body="hello there",
+        labels=["label1"],
+    )
+    existing_page = mocker.Mock(spec=[])
+
+    assert md2cf.upsert.labels_need_updating(page, existing_page) is True

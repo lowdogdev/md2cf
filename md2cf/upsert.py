@@ -42,7 +42,7 @@ def get_parent_id_from_title(confluence, page):
         ],
     )
     if parent_page is None:
-        raise KeyError("The parent page could not be found")
+        raise KeyError(f"The parent page '{page.parent_title}' could not be found for '{page.title}'")
     return parent_page.id
 
 
@@ -124,10 +124,13 @@ def labels_need_updating(page, existing_page):
     if page.labels is None:
         return False
 
-    if sorted(
-        [label.name for label in existing_page.metadata.labels.results]
-    ) != sorted(page.labels):
+    metadata = getattr(existing_page, "metadata", None)
+    if metadata is None:
         return True
+
+    return sorted([label.name for label in metadata.labels.results]) != sorted(
+        page.labels
+    )
 
 
 def page_needs_updating(page, existing_page, replace_all_labels):

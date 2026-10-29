@@ -1,3 +1,5 @@
+import mimetypes
+import os
 from urllib.parse import urljoin
 
 import requests
@@ -222,28 +224,38 @@ class MinimalConfluence:
         if existing_attachments.size:
             return existing_attachments.results[0]
 
+    @staticmethod
+    def _attachment_parts(fp, message):
+        # Confluence Cloud wants the file part first, with an explicit content type,
+        # and the comment as a plain form field (not a file part).
+        name = os.path.basename(getattr(fp, "name", "") or "attachment")
+        content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        parts = [("file", (name, fp, content_type))]
+        if message:
+            parts.append(("comment", (None, message)))
+        return parts
+
     def update_attachment(self, confluence_page, fp, existing_attachment, message=""):
         return self._post(
             f"content/{confluence_page.id}/child/attachment/{existing_attachment.id}/"
             f"data",
             headers={"X-Atlassian-Token": "nocheck"},
-            files={"file": fp, "comment": message if message else None},
+            files=self._attachment_parts(fp, message),
         )
 
     def create_attachment(self, confluence_page, fp, message=""):
         return self._post(
             f"content/{confluence_page.id}/child/attachment",
-            json={"comment": message} if message else None,
             headers={"X-Atlassian-Token": "nocheck"},
             params={"allowDuplicated": "true"},
-            files={"file": fp, "comment": message if message else None},
+            files=self._attachment_parts(fp, message),
         )
 
     def add_labels(self, page, labels):
         # return self.api.content(page.id).post(
         return self._post(
             f"content/{page.id}/label",
-            data=[{"name": label, "type": "global"} for label in labels],
+            json=[{"name": label, "prefix": "global"} for label in labels],
         )
 
     def get_url(self, page):
